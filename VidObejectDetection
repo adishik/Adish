@@ -1,0 +1,182 @@
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+import sys
+import numpy as np
+import tarfile
+import zipfile
+import tensorflow.compat.v1 as tf
+import six.moves.urllib as urllib
+import os
+import logging
+import sys
+sys.path.append("models\\research\\")
+sys.path.append("models\\research\\object_detection\\utils")
+sys.path.append("models\\research\\object_detection\\protos")
+import tkinter
+import matplotlib as pl
+import cv2
+from object_detection.utils import ops as ops_utils
+from collections import defaultdict
+from io import StringIO
+from matplotlib import pyplot as plt
+from PIL import Image
+from object_detection.utils import label_map_util
+from utils import visualization_utils as vis_util
+from object_detection.protos import string_int_label_map_pb2
+from six import string_types
+from six.moves import range
+from google.protobuf import text_format
+from os.path import isfile, join
+%matplotlib inline
+def load_labelmap(path):
+  """Loads label map proto.
+
+  Args:
+    path: path to StringIntLabelMap proto text file.
+  Returns:
+    a StringIntLabelMapProto
+  """
+  
+  with tf.compat.v2.io.gfile.GFile(path, 'r') as fid:
+    label_map_string = fid.read()
+    label_map = string_int_label_map_pb2.StringIntLabelMap()
+    try:
+      text_format.Merge(label_map_string, label_map)
+    except text_format.ParseError:
+      label_map.ParseFromString(label_map_string)
+  _validate_label_map(label_map)
+  return label_map
+
+def _validate_label_map(label_map):
+  """Checks if a label map is valid.
+
+  Args:
+    label_map: StringIntLabelMap to validate.
+
+  Raises:
+    ValueError: if label map is invalid.
+  """
+  for item in label_map.item:
+    if item.id < 0:
+      raise ValueError('Label map ids should be >= 0.')
+    if (item.id == 0 and item.name != 'background' and
+        item.display_name != 'background'):
+      raise ValueError('Label map id 0 is reserved for the background label')
+#open label map - that give the graph "dictionary"
+label_map = load_labelmap("models\\research\\object_detection\\data\\mscoco_label_map.pbtxt")
+categories = label_map_util.convert_label_map_to_categories(label_map, max_num_classes = 90 , use_display_name = True)
+category_index = label_map_util.create_category_index(categories)
+# open frozen graph( a graph you cant train anymore)
+tar_file = tarfile.open('ssd_mobilenet_v1_coco_2018_01_28.tar.gz')
+for file in tar_file.getmembers():
+    file_name = os.path.basename(file.name)
+    if 'frozen_inference_graph.pb' in file_name:
+        tar_file.extract(file, os.getcwd())
+PATH_TO_CKPT = 'ssd_mobilenet_v1_coco_2018_01_28/frozen_inference_graph.pb'
+PATH_TO_LABELS =os.path.join('data' , 'mscoco_label_map.pbtxt')
+NUM_CLASSES = 90
+detection_graph = tf.compat.v1.Graph()
+with detection_graph.as_default():
+    od_graph_def = tf.compat.v1.GraphDef()
+    with tf.compat.v2.io.gfile.GFile(PATH_TO_CKPT , 'rb') as fid:
+        serialized_graph = fid.read()
+        od_graph_def.ParseFromString(serialized_graph)
+        tf.import_graph_def(od_graph_def, name = '')
+# this method runnnig the graph on the photo, split the photo in method call R-CNN wich helps us detecting the main interest
+def run_inference_for_single_image(image, graph):
+  with graph.as_default():
+    with tf.Session() as sess:
+      # Get handles to input and output tensors
+      ops = tf.get_default_graph().get_operations()
+      all_tensor_names = {output.name for op in ops for output in op.outputs}
+      tensor_dict = {}
+      for key in [
+          'num_detections', 'detection_boxes', 'detection_scores',
+          'detection_classes', 'detection_masks'
+      ]:
+        tensor_name = key + ':0'
+        if tensor_name in all_tensor_names:
+          tensor_dict[key] = tf.get_default_graph().get_tensor_by_name(
+              tensor_name)
+      if 'detection_masks' in tensor_dict:
+        detection_boxes = tf.squeeze(tensor_dict['detection_boxes'], [0])
+        detection_masks = tf.squeeze(tensor_dict['detection_masks'], [0])
+        real_num_detection = tf.cast(tensor_dict['num_detections'][0], tf.int32)
+        detection_boxes = tf.slice(detection_boxes, [0, 0], [real_num_detection, -1])
+        detection_masks = tf.slice(detection_masks, [0, 0, 0], [real_num_detection, -1, -1])
+        detection_masks_reframed = utils_ops.reframe_box_masks_to_image_masks(
+            detection_masks, detection_boxes, image.shape[0], image.shape[1])
+        detection_masks_reframed = tf.cast(
+            tf.greater(detection_masks_reframed, 0.5), tf.uint8)
+        tensor_dict['detection_masks'] = tf.expand_dims(
+            detection_masks_reframed, 0)
+      image_tensor = tf.get_default_graph().get_tensor_by_name('image_tensor:0')
+      output_dict = sess.run(tensor_dict,
+                             feed_dict={image_tensor: np.expand_dims(image, 0)})
+      output_dict['num_detections'] = int(output_dict['num_detections'][0])
+      output_dict['detection_classes'] = output_dict[
+          'detection_classes'][0].astype(np.uint8)
+      output_dict['detection_boxes'] = output_dict['detection_boxes'][0]
+      output_dict['detection_scores'] = output_dict['detection_scores'][0]
+      if 'detection_masks' in output_dict:
+        output_dict['detection_masks'] = output_dict['detection_masks'][0]
+  return output_dict
+  def load_image_into_numpy_array (image):
+    (im_width, im_heigth) = image.size
+    return np.array(image.getdata()).reshape((im_heigth, im_width, 3)).astype(np.uint8)
+  def Photodict(image):
+    image_np = load_image_into_numpy_array(Image.open(image))
+    image_np_expanded = np.expand_dims(image_np , axis =0)
+    output_dict = run_inference_for_single_image(image_np, detection_graph)
+    return vis_util.visualize_boxes_and_labels_on_image_array(image_np,  output_dict ['detection_boxes'] ,
+                                                              output_dict['detection_classes'], 
+                                                              output_dict['detection_scores'], 
+                                                              category_index, 
+                                                              instance_masks = output_dict.get('detection_masks'),
+                                                              use_normalized_coordinates = True,line_thickness = 8)
+    def SpltVidIntoFrames(vid):
+    vidcap = cv2.VideoCapture(vid)
+    pathtojpg = "C:\\Users\\adish\\test\\"
+    def getFrame(sec):
+        vidcap.set(cv2.CAP_PROP_POS_MSEC,sec*1000)
+        hasFrames,image = vidcap.read()
+        if hasFrames:
+            cv2.imwrite("C:\\Users\\adish\\test\\image"+str(count)+".jpg", image)     # save frame as JPG file
+        return hasFrames
+    sec = 0
+    frameRate = 4
+    count=1
+    success = getFrame(sec)
+    while success:
+        count = count + 1
+        sec = sec + frameRate
+        sec = round(sec, 2)
+        success = getFrame(sec)
+    return pathtojpg
+    def ReturnFramesToVid(path):
+    pathIn= path
+    pathOut = 'C:\\Users\\adish\\test\\vidtst.mp4'
+    fps = 0.5
+    frame_array = []
+    files = [f for f in os.listdir(pathIn) if isfile(join(pathIn, f))]
+    files.sort(key = lambda x: x[5:-4])
+    files.sort()
+    for i in range(len(files)):
+        filename=pathIn + files[i]
+        img = cv2.imread(filename)
+        height, width, layers = img.shape
+        size = (width,height)
+        frame_array.append(img)
+    out = cv2.VideoWriter(pathOut,cv2.VideoWriter_fourcc(*'DIVX'), fps, size)
+    for i in range(len(frame_array)):
+        out.write(frame_array[i])
+    out.release()
+    path = SpltVidIntoFrames("C:\\Users\\adish\\cattst.mp4")
+count = 1
+for f in os.listdir(path):
+    data = Photodict(path+f)
+    img = Image.fromarray(data, 'RGB')
+    img.save("C:\\Users\\adish\\test1\\image"+str(count)+".jpg")
+    count  = count+1
+ReturnFramesToVid("C:\\Users\\adish\\test1\\")
