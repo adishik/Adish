@@ -1,0 +1,29 @@
+public static int count(String str, String pattern)
+   {
+       if(str == null)
+           return -1;
+       if(str.length() < pattern.length())
+           return -1;
+       if(pattern == null)
+           return -1;
+       return count(0, pattern,0 ,str ,0);
+   }
+   public static int count(int substringIndex, String substring,  int stringIndex , String string, int count) // 2 ^ n
+   {
+     if (stringIndex == string.length())
+         return count;
+
+     if (substring.charAt(substringIndex) == string.charAt(stringIndex))
+         if (substringIndex == substring.length() - 1)
+         {
+             count++;
+             return count(substringIndex , substring, stringIndex + 1, string, count);
+         }
+         else
+             {
+             return count(substringIndex, substring, stringIndex + 1, string, count) +
+                     count(substringIndex + 1, substring, stringIndex + 1, string, count);
+
+             }
+     else
+           return count(substringIndex  , substring, stringIndex + 1, string, count);
