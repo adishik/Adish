@@ -142,7 +142,7 @@ def run_inference_for_single_image(image, graph):
         vidcap.set(cv2.CAP_PROP_POS_MSEC,sec*1000)
         hasFrames,image = vidcap.read()
         if hasFrames:
-            cv2.imwrite("C:\\Users\\adish\\test\\image"+str(count)+".jpg", image)     # save frame as JPG file
+            cv2.imwrite("{{Patt}}\\image"+str(count)+".jpg", image)     # save frame as JPG file
         return hasFrames
     sec = 0
     frameRate = 4
@@ -156,7 +156,7 @@ def run_inference_for_single_image(image, graph):
     return pathtojpg
     def ReturnFramesToVid(path):
     pathIn= path
-    pathOut = 'C:\\Users\\adish\\test\\vidtst.mp4'
+    pathOut = '{{Path}}\\vidtst.mp4'
     fps = 0.5
     frame_array = []
     files = [f for f in os.listdir(pathIn) if isfile(join(pathIn, f))]
@@ -172,11 +172,11 @@ def run_inference_for_single_image(image, graph):
     for i in range(len(frame_array)):
         out.write(frame_array[i])
     out.release()
-    path = SpltVidIntoFrames("C:\\Users\\adish\\cattst.mp4")
+    path = SpltVidIntoFrames("{{Path}}\\cattst.mp4")
 count = 1
 for f in os.listdir(path):
     data = Photodict(path+f)
     img = Image.fromarray(data, 'RGB')
-    img.save("C:\\Users\\adish\\test1\\image"+str(count)+".jpg")
+    img.save({{Path}}\\image"+str(count)+".jpg")
     count  = count+1
-ReturnFramesToVid("C:\\Users\\adish\\test1\\")
+ReturnFramesToVid("{{Path}}\\")
